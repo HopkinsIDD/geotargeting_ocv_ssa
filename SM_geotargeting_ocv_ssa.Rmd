@@ -1,0 +1,1047 @@
+---
+title: "The impact of geographic targeting of oral cholera vaccination in sub-Saharan Africa: a modeling study"
+subtitle: "Supplementary Material"
+author: "Elizabeth C. Lee, Andrew S. Azman, Joshua Kaminsky, Sean M. Moore, Heather S. McKay, Justin Lessler"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE, eval=TRUE}
+options(tinytex.verbose = TRUE)
+knitr::opts_chunk$set(echo = FALSE, cache=FALSE, warning=FALSE, message=FALSE, fig.align="center")
+library(kableExtra)
+
+```
+
+```{r captioner, include=FALSE, eval=TRUE}
+library(captioner)
+tab_nums <- captioner(prefix = "Table S", auto_space = FALSE)
+fig_nums <- captioner(prefix = "Figure S", auto_space = FALSE)
+source("source/utils_mods.R")
+reload_source()
+
+```
+
+\newpage
+
+## Vaccination Campaign Coverage 
+
+```{r, proc-coverage, include=FALSE}
+
+covDat <- read_ods("data/Review_OCV_campaign_coverage.ods", sheet = "coverage_survey", col_names = TRUE, na = "NA") %>%
+  dplyr::filter(redundant_aggregation == FALSE & two_doses == TRUE & !exclude)
+ci_low <- sapply(strsplit(covDat$vacc_coverage_ci, split = "-"), function(x){return(x[1])})
+ci_high <- sapply(strsplit(covDat$vacc_coverage_ci, split = "-"), function(x){return(x[2])})
+
+clDat <- covDat  %>%
+  dplyr::mutate(sample_size = round(number_vacc/(vacc_coverage_pct/100))) %>%
+  dplyr::mutate(vacc_coverage = vacc_coverage_pct/100, vacc_coverage_ci_lower = as.numeric(ci_low)/100, vacc_coverage_ci_upper = as.numeric(ci_high)/100) %>%
+  dplyr::mutate(vacc_coverage_inverseVar = 1/((sqrt(sample_size)*(vacc_coverage_ci_upper-vacc_coverage_ci_lower)/3.92)^2)) %>%
+  dplyr::mutate(coverage_se_norm = (vacc_coverage_ci_upper-vacc_coverage_ci_lower)/(1.96*2))
+
+distDat <- clDat %>% 
+  dplyr::select(study_id, vaccinated_group, vacc_coverage, coverage_se_norm, sample_size)
+
+tab_nums(name = "ocv-coverage-table", caption = "**Published coverage survey estimates from previous OCV campaigns.** Median point estimates and standard errors were used to resample coverage from a normal distribution for each campaign.", display = FALSE)
+
+```
+
+We assessed the sensitivity of our models to vaccination campaign coverage, as there has been great variability in the success of previous OCV campaigns. We first conducted a review of published literature on post-OCV campaign vaccination coverage surveys and identified seven studies related to 24 two-dose campaigns conducted globally from 2003 through 2016 (`r tab_nums("ocv-coverage-table", display = "cite")`) (Lam et al. 2017; Tohme et al. 2015; Luquero et al. 2013; Uddin et al. 2014; Massing et al. 2018; Sema Baltazar et al. 2018; Cavailler et al. 2006). 
+
+`r tab_nums("ocv-coverage-table", display = "full")`
+
+```{r, tab-coverage}
+
+display_covDat <- clDat %>% 
+  dplyr::select(study_id, country, vaccinated_group, vacc_coverage, coverage_se_norm, sample_size) %>%
+  dplyr::mutate(country = recode(country, IRQ = "Iraq", HTI = "Haiti", GIN = "Guinea", BGD = "Bangladesh", `COD` = "DR Congo", MOZ = "Mozambique")) %>%
+  dplyr::mutate(study = recode(study_id, Lam2017 = "Lam 2017", Tohme2015 = "Tohme 2015", Luquero2013 = "Luquero 2013", Uddin2014 = "Uddin 2014", Massing2018 = "Massing 2018", Baltazar2018 = "Sema Baltazar 2018", Cavailler2006 = "Cavailler 2006")) %>%
+  rowwise %>%
+  dplyr::mutate(loc = paste(vaccinated_group, country, sep = ", ")) %>%
+  ungroup %>%
+  dplyr::select(study, loc, vacc_coverage, coverage_se_norm, sample_size)
+
+knitr::kable(display_covDat, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Study", "Campaign", "Coverage", "SE", "Sample Size"))
+
+
+# print(paste("Unweighted mean vaccination coverage: ", mean(display_covDat$vacc_coverage)))
+# print(paste("Median vaccination coverage: ", median(display_covDat$vacc_coverage)))
+
+```
+
+The study site coverage estimates were skewed slightly left due to the presence of outlying low vaccination campaigns among our study pool (with a mean of 71.3% and median of 76.9%).
+
+For each of the seven studies, we resampled two-dose (the standard vaccine regimen) coverage estimates 5000 times from a Gaussian distribution with a mean equal to the estimated coverage at the campaign site and the variance derived from the associated 95% confidence intervals; for studies with multiple locations, we first drew a single location randomly and then sampled from a Gaussian distribution of coverage estimates for that location. We pooled these 35,000 draws across studies and used the median (68%) of the samples as the baseline coverage estimate for our model (`r fig_nums("ocv-coverage-alt-figure", display = "cite")`). The 10th (49%) and 90th (84%) percentiles of the resampled distribution were used for the low and high coverage sensitivity analyses. These estimates give studies equal weight to the distribution regardless of the number of campaign locations. 
+
+```{r, fig-coverage}
+
+set.seed(35546660)
+
+samps <- unlist(unlist(lapply(unique(distDat$study_id), function(id){
+  studyDat <- distDat %>% dplyr::filter(study_id==id)
+  sampleStudyDat <- sample_n(studyDat, size = 5000, replace = TRUE)
+  vals <- unlist(lapply(1:nrow(sampleStudyDat), function(i){
+    row <- unlist(sampleStudyDat[i,3:4])
+    rnorm(n = 1, mean = row['vacc_coverage'], sd = row['coverage_se_norm'])
+  })) 
+  return(vals)
+})))
+
+# print("Deciles for the Gaussian equal-weight resampled distribution of OCV campaign coverage")
+# quantile(samps, prob = seq(0, 1, by = .1))
+
+```
+
+As there are many possible methods for identifying OCV coverage parameters for our models, we compared the parameters we used in our study (shown above), to others that could have been proposed. As one alternative, we performed the resampling exercise where weights were applied according to campaign site sample size (`r fig_nums("ocv-coverage-alt-figure", display = "cite")`). The median was 66%, and the 10th and 90th percentiles were 44% and 82% respectively. As a second alternative, we performed the equal-weighting sampling exercise again under the assumption that coverage should follow a lognormal distribution (`r fig_nums("ocv-coverage-alt-figure", display = "cite")`).  The median was 68%, and the 10th and 90th percentiles were 49% and 84% respectively.
+
+The percentiles of interest were the same up to the 100th decimal place for the unweighted Gaussian (used in the main text) and lognormal resampling approaches, while the weighted Gaussian resampled percentiles were slightly lower than those from the unweighted Gaussian resampling scheme.
+
+```{r, fig-coverage-alt, fig.dim = c(6.5,4.5)}
+
+set.seed(35546661)
+
+samps_wt <- unlist(unlist(lapply(unique(distDat$study_id), function(id){
+  studyDat <- distDat %>% dplyr::filter(study_id==id)
+  sampleStudyDat <- sample_n(studyDat, size = 5000, weight = sample_size, replace = TRUE)
+  vals <- unlist(lapply(1:nrow(sampleStudyDat), function(i){
+    row <- unlist(sampleStudyDat[i,3:4])
+    rnorm(n = 1, mean = row['vacc_coverage'], sd = row['coverage_se_norm'])
+  })) 
+  return(vals)
+})))
+
+# print("Deciles for the Gaussian sample-size-weighted resampled distribution of OCV campaign coverage")
+# quantile(samps_wt, prob = seq(0, 1, by = .1))
+
+set.seed(35546662)
+
+samps_lognorm <- unlist(unlist(lapply(unique(distDat$study_id), function(id){
+  studyDat <- distDat %>% dplyr::filter(study_id==id)
+  sampleStudyDat <- sample_n(studyDat, size = 5000, replace = TRUE)
+  vals <- unlist(lapply(1:nrow(sampleStudyDat), function(i){
+    row <- unlist(sampleStudyDat[i,3:4])
+    E_x <- row['vacc_coverage']
+    Var_x <- (row['coverage_se_norm'])^2
+    mean_log = log((E_x^2)/(sqrt(Var_x + E_x^2)))
+    sd_log = sqrt(log(1+Var_x/(E_x^2)))
+    rlnorm(n = 1, meanlog = mean_log, sdlog = sd_log)
+  })) 
+  return(vals)
+})))
+
+# print("Deciles for the lognormal equal-weights resampled distribution of OCV campaign coverage")
+# quantile(samps_lognorm, probs = seq(0, 1, by = .1))
+
+cov_alt_df <- data.frame(scheme = c(rep("Unweighted Gaussian", length(samps)), rep("Weighted Gaussian", length(samps_wt)), rep("Unweighted Lognormal", length(samps_lognorm))), coverage = c(samps, samps_wt, samps_lognorm)) %>%
+  dplyr::mutate(scheme = factor(scheme, levels = c("Unweighted Gaussian", "Weighted Gaussian", "Unweighted Lognormal")))
+cov_alt_quants <- cov_alt_df %>% 
+  group_by(scheme) %>%
+  summarise(q10 = quantile(coverage, .1), q50 = quantile(coverage, .5), q90 = quantile(coverage, .9)) %>%
+  gather(quantile, value, q10, q50, q90)
+
+ggplot(cov_alt_df, aes(x = coverage, group = scheme)) +
+  geom_histogram(aes(y = stat(density)), bins = 50) +
+  geom_vline(data = cov_alt_quants, aes(xintercept = value, group = scheme), colour = "#C46210") +
+  xlab("Vaccination campaign coverage") +
+  theme_bw() +
+  facet_wrap(~scheme, nrow = 3)
+
+fig_nums(name = "ocv-coverage-alt-figure", caption = "**Resampled distributions of OCV campaign coverage, with Gaussian assumptions and equal weights across campaign sites, which was used for the main paper (top), with Gaussian assumptions and weights for campaign site sample size (middle) and with lognormal assumptions and equal weights across campaign sites (bottom).** We generated a distribution of OCV campaign coverage estimates for each resampling scheme from published OCV coverage surveys. Rust orange lines indicate the 10th percentile, median, and 90th percentile of the resampled distributions.", display = FALSE)
+
+```
+
+`r fig_nums("ocv-coverage-alt-figure", display = "full")`
+
+
+## Vaccine Efficacy
+
+We examined the sensitivity of our OCV health impact estimates to different vaccine efficacy assumptions. We fit a log-linear decay function to two-dose vaccine efficacy data reported zero to five years after vaccination in a recent meta-analysis (Bi et al. 2017); study estimates were weighted by the inverse of the squared standard error in the model. We then used the mean point estimates for each year as (direct) vaccine efficacy in our model. In this framework, the initial vaccine efficacy is 66% declining to 0% after six years (`r fig_nums("ve-figure", display = "cite")`). We modeled vaccination with only the full two-dose regimen with no wastage.
+
+```{r, fig-ve, fig.dim = c(4.5,2.5)}
+
+ve_direct <-generate_pct_protect_function()
+
+tmp_dat <- as.data.frame(ve_direct(0:6, ci=T)) %>% rename(ve=V1,ciu=V2,cil=V3)
+tmp_dat$year <- 0:6
+  
+ggplot(tmp_dat, aes(x=year, y=ve)) + geom_point() + ylim(0,0.9) +
+    geom_pointrange(aes(ymin=ciu, ymax=cil)) + ylab("Vaccine efficacy") + 
+    xlab("Years after vaccination") + theme_bw() 
+
+fig_nums(name = "ve-figure", caption = "**Waning vaccine efficacy in years after vaccination.** The data displayed represents the mean point estimate and 95% confidence intervals across data collected across seven vaccine efficacy studies. Mean point estimates were used to parametrize the primary model, while the 2.5 and 97.5 percentiles were used to parametrize the low and high vaccine efficacy models, respectively.", display = FALSE)
+
+```
+
+`r fig_nums("ve-figure", display = "full")`
+
+## Vaccine Indirect Effects
+
+Due to limited data and uncertainty about the spatial scale of indirect vaccine protection, we assessed the sensitivity of our modeled health impacts to different indirect vaccine protection assumptions. For our baseline parameter set, we modeled indirect protection as a function of the vaccination coverage in a given grid cell using data from trials in India and Bangladesh (Ali et al. 2005, 2013). Specifically, the phenomenological association between the relative reduction in incidence among unvaccinated (placebo) individuals and OCV coverage in their "neighborhood" was fit to a logistic function (`r fig_nums("indirect-baseline-figure", display = "cite")`). Under this model of indirect vaccine protection, individuals not protected by vaccine and residing in grid cells with 50\% and 70\% vaccination coverage experienced an 80\% and near 100\% reduction in cholera risk compared to no vaccination scenarios, respectively.
+
+```{r, fig-indirect-baseline, fig.dim = c(4.5, 3.5)}
+
+## data from Kolkota trial
+vc_u_k <- c(25,28,31,34,45) # upper limit of coverage bins
+vc_l_k <- c(0,25,28,31,34) # lower limit of coverage bins
+risk_v_k <- c(1.28,1.48,1.01,0.97,1.24) # incid among vacc recipients
+risk_p_k <- c(5.54,5.64,2.48,2.25,1.93) # incid among placebo recipients
+
+## data from Matlab trial
+vc_u_m <- c(28,35,40,50,60) # upper limit of coverage bins
+vc_l_m <- c(0,28,35,40,50) # lower limit of coverage bins
+risk_v_m <- c(2.66,2.47,1.57,2.25,1.27) # incid among vacc recipients
+risk_p_m <- c(7.01,5.87,4.72,4.65,1.47) # incid among placebo recipients
+
+ind_data_df = data.frame(coverage=c((vc_u_k+vc_l_k)/2, (vc_u_m+vc_l_m)/2)/100,
+                vaccinated=c(risk_v_k, risk_v_m),
+                placebo=c(risk_p_k, risk_p_m),
+                ve_I=c(1-risk_v_k/risk_p_k, 1-risk_v_m/risk_p_m),
+                loc=c(rep("Kolkata", length(vc_u_k)), rep("Matlab", length(vc_u_m))))
+
+ind_data_df <- ind_data_df %>% group_by(loc) %>%
+  dplyr::mutate(indirect=pmax(0.001, 1 - (placebo/placebo[1])), effective_cov=coverage) %>% 
+  ungroup
+
+fit <- lm(log(indirect/(1-indirect)) ~ effective_cov, data = ind_data_df)
+pred <- predict(fit, newdata = data.frame(effective_cov = seq(0.01, 1, length = 100)))
+
+indirect_inc_mult <- function(effective_coverage){
+    tmp <- predict(fit, newdata = data.frame(effective_cov = effective_coverage))
+    rc <- (1- (exp(tmp)/(1+exp(tmp)))) %>% unname
+
+    rc[which(effective_coverage==0)] <- 1
+    rc[which(effective_coverage==1)] <- 0
+    # returns a multiplier for incidence based on coverage 
+    # (if effective coverage is 0%, there is no reduction due to indirect effects and multiplier is 1)
+    return(rc)
+}
+
+indirect_df <- data.frame(proportion_immune = seq(.01, 1, length=100), incidence_reduction = indirect_inc_mult(seq(0.01, 1, length = 100)))
+
+ggplot(data = indirect_df) + 
+  geom_line(aes(x = proportion_immune, y = 100*(1-incidence_reduction))) + 
+  geom_point(data = ind_data_df, aes(x = effective_cov, y = 100*indirect, colour = loc)) + 
+  ylab("Percent reduction in incidence \n due to immunity in grid cell") +
+  xlab("Proportion of population immune") + 
+  scale_colour_discrete("") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+fig_nums(name = "indirect-baseline-figure", caption = "**Indirect protective effect of vaccination.** Each point represents the percent reduction in incidence due to cholera vaccination coverage (population immunity), as reported by randomized controlled trials in Kolkata and Matlab. The black line represents the logistic function fit to these data.", display = FALSE)
+
+```
+
+`r fig_nums("indirect-baseline-figure", display = "full")`
+
+Sensitivity parameters for indirect vaccine effects assumed, at the lower end, that vaccination conferred no indirect protection. On the upper end, we assumed that individuals not protected by vaccine and residing in grid cells with 30\%, 50\%, and 70\% vaccination coverage experienced a respective 66\%, 88\%, and 97\% reduction in cholera risk, according to a logistic model fit of published estimates (`r fig_nums("indirect-baseline-sens", display = "cite")`) (Longini Jr. et al. 2007).
+
+```{r, fig-indirect-sens, fig.dim = c(4.5, 3.5)}
+
+vacc_cov_seq <- seq(0.01, 1, length=100)
+bl_fxn <- generate_indirect_incidence_mult()
+low_fxn <- generate_indirect_incidence_sensitivity_mult("lower")
+hi_fxn <- generate_indirect_incidence_sensitivity_mult("upper")
+fxns <- list(bl_fxn, low_fxn, hi_fxn)
+indirects <- map_dfr(1:length(fxns), function(i){
+  fxn = fxns[[i]]
+  data.frame(sensitivity = i, vacc_coverage = vacc_cov_seq, indirect_protection = 1-fxn(vacc_cov_seq))
+}) %>%
+  dplyr::mutate(sensitivity = recode(sensitivity, `1` = "baseline", `2` = "lower", `3` = "upper") )
+
+ggplot(indirects, aes(x = vacc_coverage*100, y = indirect_protection*100)) +
+  geom_line(aes(colour = sensitivity)) +
+  theme_bw() +
+  theme(legend.position = 'bottom') +
+  scale_x_continuous("Vaccination Coverage (%)") +
+  scale_y_continuous("Indirect Protection (%)")
+
+fig_nums(name = "indirect-baseline-sens", caption = "**Sensitivity parameters for indirect protective effect of vaccination.**", display = FALSE)
+
+```
+
+`r fig_nums("indirect-baseline-sens", display = "full")`
+
+## Vaccine Supply Projections
+
+There is great uncertainty in OCV supply over the next decade; increasing demand has led to plans to open several new manufacturing facilities, but the timing of these projected increases in supply remains uncertain. Based on estimates from experts within the GTFCC and data from vaccine manufacturers in the first half of 2018, we assumed that global OCV supply would increase linearly from 23 million doses in 2018 to 59 million doses in 2030 (`r fig_nums("vaccine-supply-baseline", display = "cite")`). 
+
+```{r, fig-vaccine-supply-baseline, fig.dim = c(4.5, 3.25)}
+
+icgdemand <- data.frame(year = 2015:2017, vaccines = c(2.2, 7, 17), type = "historical")
+projected <- read_csv("source_inputs/vaccine_supply_baseline.csv") %>% 
+  dplyr::mutate(vaccines = vaccines/1E6, year = as.integer(year)) %>% 
+  dplyr::mutate(type = "projected") %>%
+  dplyr::filter(year %in% 2018:2030)
+ocv_supply <- bind_rows(icgdemand, projected)
+
+ggplot(ocv_supply, aes(x = year, y = vaccines)) +
+  geom_col(aes(fill = type)) +
+  annotate("text", x = ocv_supply$year, y = ocv_supply$vaccines-2, colour = "black", size = 4, label = ocv_supply$vaccines) +
+  theme_bw() +
+  theme(text = element_text(size = 14), panel.grid = element_blank(), legend.position = "bottom", legend.title = element_blank(), axis.text.x = element_text(angle=45, vjust=1, hjust=1), axis.title.x = element_blank()) +
+  scale_fill_canva(palette = "Modern and minimal") +
+  scale_x_continuous(breaks = ocv_supply$year) +
+  scale_y_continuous("Vaccine Supply (Millions)")
+
+fig_nums(name = "vaccine-supply-baseline", caption = "**The historical (2015-2017) and projected (2018-2030) cholera vaccine supply.** The projected vaccine supply per year (in millions) was used as a model input.", display = FALSE)
+
+```
+
+`r fig_nums("vaccine-supply-baseline", display = "full")`
+
+Sensitivity parameters for vaccine supply assumed after 2019 either no growth or linear growth to 95 million doses in 2030; upper limit vaccine supplies may be achieved if new OCV production facilities open as planned (`r fig_nums("vaccine-supply-sens", display = "cite")`).
+
+```{r, fig-vaccine-supply-sens, fig.dim = c(4.5, 3.25)}
+
+baseline <- read_csv("source_inputs/vaccine_supply_baseline.csv") %>% dplyr::mutate(sensitivity = "baseline")
+low <- read_csv("source_inputs/vaccine_supply_constant.csv") %>% dplyr::mutate(sensitivity = "lower")
+up <- read_csv("source_inputs/vaccine_supply_high.csv") %>% dplyr::mutate(sensitivity = "upper")
+supply_sens_df <- bind_rows(baseline, low, up) %>% 
+  dplyr::mutate(vaccines = vaccines/1E6, year = as.integer(year)) %>% 
+  dplyr::filter(year %in% 2018:2030)
+supply_labs <- supply_sens_df %>% dplyr::filter(year == 2030)
+
+ggplot(supply_sens_df, aes(x = year, y = vaccines)) +
+  geom_line(aes(colour = sensitivity)) +
+  geom_point(aes(colour = sensitivity)) +
+   annotate("text", x = supply_labs$year, y = supply_labs$vaccines+3, colour = "black", size = 4, label = supply_labs$vaccines) +
+  theme_bw() +
+  theme(text = element_text(size = 14), panel.grid = element_blank(), legend.position = "bottom", legend.title = element_blank(), axis.text.x = element_text(angle=45, vjust=1, hjust=1), axis.title.x = element_blank()) +
+  scale_x_continuous(breaks = ocv_supply$year) +
+  scale_y_continuous("Vaccine Supply (Millions)")
+
+fig_nums(name = "vaccine-supply-sens", caption = "**Sensitivity parameters for projected cholera vaccine supply (in millions) from 2018-2030.**", display = FALSE)
+
+```
+
+`r fig_nums("vaccine-supply-sens", display = "full")`
+
+
+## Vaccination Deployment Strategies
+
+The case optimized, case-logistics optimized, and watsan optimized results were not reported in the main text. The case optimized strategy performed worse than the rate optimized but better than the rate-logistics optimized strategies;  28.7\% (95\% CI: 26.6-29.7\%) of cases that would have otherwise occurred without vaccination from 2018 through 2030 were averted. This reduction translates to 698,000 cases, 28,000 deaths, and 657,000 DALYs averted after 13 years of vaccination. In the case-logistics optimized strategy, 25.4\% (95\% CI: 24.5-26.4\%) of cumulative cases that would have otherwise occurred without vaccination were averted, thus translating to 619,000 cases, 24,000 deaths, and 581,000 DALYs averted after 13 years of vaccination.
+
+The watsan optimized strategy was similar to the water optimized and sanitation optimized strategies, but the districts were prioritized according to those with the lowest access to improved water or sanitation. As a combination of the water and sanitation optimized strategies, the watsan optimized strategy performed better than the sanitation optimized strategy and less well than the water optimized strategy; 8.2\% (95\% CI: 7.7-8.4\%) of cases that would have otherwise occurred without vaccination from 2018 through 2030 were averted, which translates to 199,000 cases, 7,000 deaths, and 171,000 DALYs averted after 13 years of vaccination campaigns.
+
+The rate optimized and rate-logistics optimized vaccination campaign deployment strategies are described in greater detail in `r fig_nums("hr-district-rate-flowchart", display = "cite")` and `r fig_nums("optimal-district-rate-flowchart", display = "cite")`. 
+
+```{r, fig-hrdiflow}
+knitr::include_graphics("figures/hr_district_rate_flowchart.png")
+fig_nums(name = "hr-district-rate-flowchart", caption = "**Flowchart depicting the rate optimized vaccination deployment strategy with primary scenario parameters.**", display = FALSE)
+
+```
+
+`r fig_nums("hr-district-rate-flowchart", display = "full")`
+
+```{r, fig-optdiflow}
+knitr::include_graphics("figures/optimal_district_rate_flowchart.png")
+fig_nums(name = "optimal-district-rate-flowchart", caption = "**Flowchart depicting the rate-logistics optimized vaccination deployment strategy with primary scenario parameters.**", display = FALSE)
+
+```
+
+`r fig_nums("optimal-district-rate-flowchart", display = "full")`
+
+## Measuring Public Health Impact and Cost Benefit
+
+We calculated the number of cases averted as the difference in cases between vaccination and no vaccination scenarios. To estimate the number of deaths averted, we multiplied a country-specific case-fatality ratio (CFR) with the expected cases outputs. We estimated country-level CFRs as the ratio of the total number of deaths to cases across all years where cholera cases were reported in the WHO Global Health Observatory database from 1970 to 2016 among countries in our study region (`r fig_nums("country-cfr", display = "cite")`). For countries where the estimated CFR exceeded 7\% (often based on outbreaks with a small total number of cases), we applied the mean CFR across all remaining countries (3.4\%).
+
+```{r, proc-cfr, include = FALSE}
+
+deaths_summary <- read_csv("data/who_cfrs.csv")
+
+total_cfrs <- deaths_summary %>% 
+  dplyr::filter(!is.na(cases), !is.na(deaths), cases>0) %>% 
+  dplyr::rename(cfr_tot = cfr) %>%
+  dplyr::select(cntry_code, country_name, cfr_tot)
+
+```
+
+We also estimated the disability-adjusted life-years (DALYs) for the vaccination and no-vaccination scenarios, where DALYs are defined as the sum of years of life lost (YLLs) and years of life disabled (YLDs). YLLs were calculated as $$YLL_i = CFR_i (Y_{i,t} - Y*_{i,t}) (\kappa_{i,t-\rho_i} - \rho_i),$$ where $\rho_i$ is the average age of cholera infection in location i and $\kappa_{i,t-\rho_i}$ is the average life expectancy for someone of average cholera infection age in year t. Country-level estimates of life expectancy for each projected year in our study period were obtained from the United Nations (United Nations Secretariat, Department of Economic and Social Affairs, Population Division 2017) and average age of cholera infection was calculated as the inverse-variance-weighted mean age among cases identified in OCV trials in Africa and the Caribbean (25.75 years old) (Azman et al. 2016; Ferreras et al. 2018; Luquero et al. 2014; Khatib et al. 2012). YLDs were calculated as the product of the proportion of the year disabled with illness (assumed at 4/365) and a disability weight for severe diarrheal disease as estimated from the 2016 IHME Global Burden of Disease Study (0.247) (Institute for Health Metrics and Evaluation, Global Burden of Disease Collaborative Network 2017). Disability weights range from 0 to 1 and represent the magnitude of the health loss associated with a specific health status.
+
+```{r, fig-cfr, fig.dim = c(4.5,5)}
+
+total_cfrs_select <- total_cfrs %>%
+    dplyr::mutate(cfr_tot = ifelse(cfr_tot>=.07, NA, cfr_tot)) %>%
+    dplyr::mutate(is.mean = ifelse(is.na(cfr_tot), TRUE, FALSE))
+mn_cfr <- mean(total_cfrs_select$cfr_tot, na.rm = TRUE)
+
+plotDat <- total_cfrs_select %>%
+  dplyr::mutate(cfr=ifelse(is.na(cfr_tot), mn_cfr, cfr_tot)) %>%
+  arrange(cfr) %>%
+  dplyr::mutate(country_name = factor(country_name, levels = country_name))
+
+ggplot(plotDat, aes(y = cfr*100, x = country_name)) +
+  geom_col(aes(fill = is.mean)) +
+  geom_hline(yintercept = mn_cfr*100) +
+  scale_y_continuous("Total case fatality ratios (%)") +
+  scale_fill_manual(values = c("#d35a7f", "#5ad3ae"), breaks = c(TRUE, FALSE), labels = c("mean value", "calculated")) +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.title.y = element_blank(), text = element_text(size = 11), legend.title = element_blank(), legend.position = "bottom")
+
+fig_nums(name = "country-cfr", caption = "**Case fatality ratios pooled across all available data by country.** We calculated the total case fatality ratios by country for all years of data available in the WHO Global Health Observatory database. For a given country, data could have been reported for any year within the range of 1970 through 2016. For countries with implied case fatality ratios greater than 7% (colored in seafoam green), we used the mean of the case fatality ratios below 7% (3.4%).", display = FALSE)
+
+```
+
+`r fig_nums("country-cfr", display = "full")`
+
+We compared the country-level total (pooled across years) CFR estimates to the outputs from country-specific random effects models, where CFR observations were computed annually with all available WHO Global Health Observatory data (`r fig_nums("country-cfr-remodel", display = "cite")`). We found that the estimates from the random effects models were systematically higher than the total CFRs. We preferred to use the total CFR estimates because they would generate more conservative estimates in the number of deaths averted through vaccination campaigns.
+
+```{r, fig-cfr-remodel, fig.dim = c(6.5,5)}
+
+library(metafor)
+
+cfr_yc <- read_csv(paste0("data/whoannual_wppPop.csv")) %>%
+  dplyr::mutate(cfr = ifelse(!is.na(deaths), deaths/sCh, NA)) %>%
+  dplyr::filter(!is.na(cfr))
+cfr_summ <- cfr_yc %>%
+  group_by(cntry) %>%
+  summarise(nyrs = length(year), mn_cfr = mean(cfr)) 
+
+## clean dataset
+cfr_df <- left_join(cfr_yc, cfr_summ, by = c("cntry")) %>%
+  left_join(total_cfrs, by = c("cntry"="cntry_code"))
+
+res <- map_dfr(unique(cfr_df$cntry), function(cy){
+  cntrycfr_df <- cfr_df %>% dplyr::filter(cntry == cy)
+  dat <- escalc(measure = "PR", xi = deaths, ni = sCh, data = cntrycfr_df) 
+  re <- rma(yi=yi, vi=vi, data=dat, method = "EB") 
+  data.frame(cntry=cy, nyrs = cntrycfr_df[1,]$nyrs, sch_tot = sum(cntrycfr_df$sCh), cfr_mn = cntrycfr_df[1,]$mn_cfr, cfr_tot = cntrycfr_df[1,]$cfr_tot, cfr_re = unname(coef.rma(re)))
+})
+
+ggplot(res, aes(x=cfr_tot, y=cfr_re)) +
+  geom_point(aes(size=nyrs), alpha = .4, colour = "#426cda") +
+  geom_text(aes(label = cntry), nudge_x = .007, check_overlap = TRUE, size=3) +
+  geom_abline(aes(slope=1,intercept=0)) +
+  scale_size("years of WHO data", trans="log", breaks=c(5,10,20,40)) +
+  xlab("total case fatality ratio") +
+  ylab("random effects case fatality ratio") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+fig_nums(name = "country-cfr-remodel", caption = "**Comparison of total CFR and random effects model CFR estimates by country.** Random effects model estimates were systematically larger than total CFR estimates, and they were specifically higher in several countries where rate-logistics optimized targeting takes place, such as DR Congo (COD), Cameroon (CMR), and Sierra Leone (SLE).", display = FALSE)
+
+```
+
+`r fig_nums("country-cfr-remodel", display = "full")`
+
+
+## Vaccination Campaign Costs
+
+We reviewed four cost surveys for mass OCV campaigns that reported the vaccine delivery and vaccine procurement costs per fully vaccinated person (i.e., receiving two vaccine doses) in non-refugee African settings (Ilboudo and Le Gargasson 2017; Ciglenecki et al. 2013; Cavailler et al. 2006; Schaetti et al. 2012) (`r tab_nums("ocv-cost-table", display = "cite")`). We excluded the estimate from Schaetti et al. 2012, due to its excessively high vaccine purchase prices. We felt that the exclusion of this study was reasonable based on current policy discussions, which suggest that future, preventive use of OCV in these settings are likely to be made available lower, negotiated rates. 
+
+All costs were adjusted to 2017 US dollars (USD) according to the World Bank Consumer Price Index. We used the mean of the three remaining cost survey data points ($6.32 per FVP), to calculate the cost per DALY averted results.
+
+
+```{r, read-cost}
+
+cost_dat <- read_xlsx(paste0("data/vacc_costs.xlsx"), sheet = 1, col_names = TRUE, col_types = "text", na = c("NA", "TBD")) %>%
+  dplyr::mutate(cost_survey = as.logical(cost_survey), incl = as.logical(incl)) %>%
+  dplyr::filter(who_region == "AFR" & !is.na(vacc_delivery_cost_per_FVP) & incl) %>%
+  rowwise %>%
+  dplyr::mutate(orig_delivery_cost_per_FVP = ifelse(grepl("-", vacc_delivery_cost_per_FVP), sum(as.numeric(unlist(strsplit(vacc_delivery_cost_per_FVP, split="-"))))/2, as.numeric(vacc_delivery_cost_per_FVP))) %>%
+  dplyr::mutate(orig_delivery_cost_per_dose = ifelse(grepl("-", vacc_delivery_cost_per_dose), sum(as.numeric(unlist(strsplit(vacc_delivery_cost_per_dose, split="-"))))/2, as.numeric(vacc_delivery_cost_per_dose))) %>%
+  dplyr::mutate(orig_procurement_cost_per_FVP = ifelse(grepl("-", vacc_procurement_cost_per_FVP), sum(as.numeric(unlist(strsplit(vacc_procurement_cost_per_FVP, split="-"))))/2, as.numeric(vacc_procurement_cost_per_FVP))) %>%
+  dplyr::mutate(orig_procurement_cost_per_dose = ifelse(grepl("-", vacc_procurement_cost_per_dose), sum(as.numeric(unlist(strsplit(vacc_procurement_cost_per_dose, split="-"))))/2, as.numeric(vacc_procurement_cost_per_dose))) %>%
+  dplyr::mutate(vacc_delivery_cost_per_FVP = get_inflation_multiplier(USD_year)*orig_delivery_cost_per_FVP) %>%
+  dplyr::mutate(vacc_delivery_cost_per_dose = get_inflation_multiplier(USD_year)*orig_delivery_cost_per_dose) %>%
+  dplyr::mutate(vacc_procurement_cost_per_FVP = get_inflation_multiplier(USD_year)*orig_procurement_cost_per_FVP) %>%
+  dplyr::mutate(vacc_procurement_cost_per_dose = get_inflation_multiplier(USD_year)*orig_procurement_cost_per_dose) %>%
+  dplyr::mutate(vacc_total_cost_per_dose = vacc_delivery_cost_per_dose + vacc_procurement_cost_per_dose) %>%
+  dplyr::mutate(vacc_total_cost_per_FVP = vacc_delivery_cost_per_FVP + vacc_procurement_cost_per_FVP) %>%
+  ungroup
+display_costDat <- cost_dat %>%
+  dplyr::select(author, country, vacc_procurement_cost_per_FVP, vacc_delivery_cost_per_FVP, vacc_total_cost_per_FVP) %>%
+  dplyr::mutate(study = recode(author, Ilboudo2017 = "Ilboudo and Le Gargasson 2017", Ciglenecki2013 = "Ciglenecki et al. 2013", Cavailler2006 = "Cavailler et al. 2006")) %>%
+  dplyr::mutate(country = recode(country, MWI = "Malawi", GIN = "Guinea", MOZ = "Mozambique")) %>%
+  dplyr::mutate(vacc_procurement_cost_per_FVP = round(vacc_procurement_cost_per_FVP, 2), vacc_delivery_cost_per_FVP = round(vacc_delivery_cost_per_FVP, 2), vacc_total_cost_per_FVP = round(vacc_total_cost_per_FVP, 2)) %>%
+  dplyr::select(study, country, vacc_procurement_cost_per_FVP, vacc_delivery_cost_per_FVP, vacc_total_cost_per_FVP)
+
+tab_nums(name = "ocv-cost-table", caption = "**Cost survey estimates (adjusted to 2017 USD) per fully vaccinated person (FVP) for previous vaccination campaigns in Africa.**", display = FALSE)
+
+```
+
+`r tab_nums("ocv-cost-table", display = "full")`
+
+```{r, tab-cost}
+knitr::kable(display_costDat, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Study", "Country", "Procurement", "Delivery", "Total"))
+
+```
+
+
+## Constant Incidence Assumption
+
+Our model assumed that baseline cholera incidence risk remained constant in our projections and we examined the reasonableness of this assumption using data from country-level annual cholera reports to WHO. First, we gathered all available country-level cholera case data from [WHO annual cholera reports](https://www.who.int/cholera/statistics/en/), which are reported annually in issues of the Weekly Epidemiological Record, for African countries in our study. Cholera case data were available from 1970 through 2017, but data are not complete for all countries and years.
+
+We also gathered country-level population estimates from the 2019 United Nations World Population Projections, which were available in five-year intervals from 1950 through 2020. We fit a log-linear model to data for each country in order to obtain annual country-level estimates, and then we divided the case and population data to obtain annual estimates of the cholera incidence rate by country and year.
+
+```{r, read-whoannual}
+
+  sch_pop_clean <- read_csv(paste0("data/whoannual_wppPop.csv")) %>%
+    dplyr::mutate(ir100k_obs = ifelse(!is.na(sCh), sCh/pop1k_fit*100, NA)) %>%
+    dplyr::mutate(decade = case_when(
+                            year %in% 1970:1979 ~ "1970s",
+                            year %in% 1980:1989 ~ "1980s",
+                            year %in% 1990:1999 ~ "1990s",
+                            year %in% 2000:2010 ~ "2000s",
+                            year %in% 2010:2019 ~ "2010s")) %>%
+    dplyr::filter(year >= 2008) ## last 10 years
+
+```
+
+For each country-year pair from 2008-2017, we then compared the observed incidence rate to the expected incidence rate, which was calculated as the country's mean annual incidence rate across all remaining years in 10-year range (`r fig_nums("whoannual-obsExp-mai", display = "cite")`). The mean of the difference between observed and expected incidence rates (i.e., bias), was nearly zero (1.5E-16); this means that the mean annual incidence was an unbiased predictor of incidence in the held-out year, suggesting that our analysis is valid in the expectation. In addition, there was a positive relationship between the expected and observed incidence rates ($H_0:\rho = 0$; $\rho = 0.31$, p-value $= 2.4E-6$).
+
+```{r, fig-whoannual-obsExp-mai, fig.dim = c(4,4)}
+
+## MAI across all years 
+expected_mai_allyrs <- map_dfr(1:nrow(sch_pop_clean), function(row){
+
+ cntry_name <- sch_pop_clean[row,]$cntry
+ expected <- sch_pop_clean[-row,] %>%
+   dplyr::filter(cntry == cntry_name) %>%
+   group_by(cntry) %>%
+   summarise(ir100k_exp = mean(ir100k_obs, na.rm=TRUE)) %>%
+   dplyr::mutate(year = sch_pop_clean[row,]$year) %>%
+   dplyr::select(cntry, year, ir100k_exp)
+
+ return(expected)
+})
+
+full_df <- full_join(sch_pop_clean, expected_mai_allyrs, by = c("cntry", "year")) 
+## Is there bias in the expected incidence?
+bias <- full_df %>% mutate(ir100k_diff=ir100k_obs-ir100k_exp) %>% summarise(mn = mean(ir100k_diff, na.rm = TRUE)) ## 1.5E-16
+# print(paste("bias between observed and expected incidence rates:", bias))
+## Spearman correlation coefficient 
+# cor.test(full_df$ir100k_obs, full_df$ir100k_exp, method = "spearman") ## rho = .31, p-value 2.4E-6
+
+ggplot(full_df, aes(x = ir100k_obs, y = ir100k_exp)) +
+  geom_point() +
+  geom_abline(aes(slope = 1, intercept = 0)) +
+  scale_colour_tableau("Observed in", palette = "Tableau 10", type = "regular") +
+  scale_x_continuous("Observed Incidence Rate per 100K", trans="log10", breaks = c(0.1, 1, 10, 100, 500)) +
+  scale_y_continuous("Expected Incidence Rate per 100K", trans="log10", breaks = c(0.1, 1, 10, 100, 500)) +
+  theme_bw() +
+  theme(text = element_text(size=11)) 
+
+fig_nums(name = "whoannual-obsExp-mai", caption = "**Observed versus expected mean annual incidence for country-year pairs according to WHO Annual Cholera Reports, 2008-2017.** ", display = FALSE)
+
+```
+
+`r fig_nums("whoannual-obsExp-mai", display = "full")`
+
+
+## Percentage of Targets in Epidemic Countries
+
+We examined the percentage of targets in the rate optimized, rate-logistics optimized, water optimized, and sanitation optimized strategies that occurred in countries with a coefficient of variation greater than 1.5 in their annual incidence rate from 2008 to 2017. We expect that countries with large coefficients of variation experience "epidemic" (instead of "endemic") cholera epidemiology, according to a framework previously proposed in Figure 4 of Lessler and Moore et al. (2018). 
+
+```{r, read-targets}
+
+strategy_ls <- c("optimumDistrictIncid", "hrDistrict2Incid", "optimumWat", "optimumSan", "optimumDistrict", "hrDistrict2", "optimumWash")
+wd <- "country_targets/baseline/" 
+
+targets_strat_df <- map_dfr(strategy_ls, function(strat){
+  targetfilelist <- list.files(paste0(wd), pattern = strat)
+
+  map_dfr(targetfilelist, function(fn){
+    read_csv(paste0(wd, fn)) %>%
+      dplyr::filter(fvp > 0) %>%
+      dplyr::select(cntry_code, district)
+  }) %>%
+    distinct(cntry_code, district) %>%
+    dplyr::mutate(alloc_strategy = strat) 
+
+})
+
+## identify epidemic countries based on last 10 years
+cv_countries <- sch_pop_clean %>%
+  group_by(cntry) %>%
+  summarise(sd = sd(ir100k_obs, na.rm=TRUE), mn = mean(ir100k_obs, na.rm=TRUE)) %>%
+  dplyr::filter(!is.nan(sd)) %>%
+  dplyr::mutate(cv = sd/mn)
+
+thresh <- 1.5 ## quantile(cv_countries$cv, probs = c(.8), na.rm = TRUE)
+top_cv_countries <- cv_countries %>%
+  dplyr::filter(cv > thresh) %>%
+  dplyr::select(cntry) %>% unlist
+
+tab_nums(name = "epitargets", caption = "**Percentage of targets in epidemic countries for baseline parameters by vaccination deployment strategy.** Epidemic countries are defined as those with a coefficient of variation in annual incidence greater than 1.5 from 2008-2017, according to cholera data from the WHO annual cholera reports and population data from the UN World Population Prospects.", display = FALSE)
+```
+
+
+`r tab_nums("epitargets", display = "full")`
+
+```{r, tab-epitargets}
+
+display_epi_targets <- targets_strat_df %>%
+  dplyr::mutate(epi_targets = ifelse(cntry_code %in% top_cv_countries, TRUE, FALSE)) %>%
+  group_by(alloc_strategy) %>%
+  summarise(epi_target_ct = sum(epi_targets), tot_targets = length(epi_targets)) %>%
+  dplyr::mutate(perc_epi_target = round(epi_target_ct/tot_targets*100, 1)) %>%
+  left_join(label_allocStrategy(), by = c("alloc_strategy")) %>%
+  dplyr::select(plot_alloc_strategy, tot_targets, epi_target_ct, perc_epi_target)
+
+knitr::kable(display_epi_targets, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Total Targets", "# Epidemic Targets", "% Epidemic Targets"))
+```
+
+
+```{r, fig-mai-cv, fig.dim = c(6,4)}
+
+## Compare MAI and CV by country
+ggplot(cv_countries, aes(x = cv, y = mn)) +
+  geom_point() +
+  geom_text(aes(label = cntry), nudge_x = .07, nudge_y = .4, check_overlap = TRUE) +
+  geom_vline(aes(xintercept = 1.5), colour = "blue") +
+  scale_y_sqrt("Mean Annual Incidence per 100K (2008-17)", breaks = c(1,10,50,100,150,200,250)) +
+  scale_x_continuous("Coefficient of variation in annual incidence") +
+  theme_bw()
+
+fig_nums(name = "mai-cv", caption = "**Cholera incidence versus the coefficient of variation of the annual incidence.** Mean annual incidence per 100,000 people versus the coefficient of variation of the annual incidence from 2008 to 2017 for 35 African countries based on reports to WHO. Countries with one or fewer years of reported data in this period were excluded. The blue line represents the threshold used to delineate endemic (left) and epidemic (right) countries.", display = FALSE)
+
+```
+
+`r fig_nums("mai-cv", display = "full")`
+
+In both the rate optimized and rate-logistics optimized strategies, 26% of locations receiving vaccine were located in countries with epidemic dynamics, respectively. In the water optimized and sanitation optimized strategies, 6% and 16% of locations receiving vaccine were located in countries with epidemic dynamics, respectively. These analyses appear in the Rmd supplement file under Percentage of Targets in Epidemic Countries.
+
+
+## Baseline Model Outcomes
+
+```{r, allscenarios}
+
+## in order, the codes represent the following strategies: no targeting, rate-logistics optimized, rate optimized, case-logistics optimized, case optimized, water optimized, watsan optimized, sanitation optimized
+alloc_strategy_ls <- c("allDistrict", "hrDistrict2Incid", "optimumDistrictIncid", "hrDistrict2", "optimumDistrict", "optimumWat", "optimumWash", "optimumSan") 
+scenario_ls <- paste0(alloc_strategy_ls, "_who030718_v2")
+
+```
+
+```{r, fxn-cumts}
+
+plot_cumts <- function(gathered_df, healthOutcome, scenarioLs){
+  pltLabels <- label_healthOutcomes() %>%
+    dplyr::filter(measure == healthOutcome)
+  pltLabels_allocStrategy <- label_allocStrategy() %>%
+    dplyr::filter(alloc_strategy %in% unique(gathered_df$alloc_strategy))
+
+  plot_df <- gathered_df %>%
+    dplyr::filter(scenario %in% scenarioLs) %>%
+    dplyr::filter(measure == healthOutcome) %>%
+    dplyr::filter(year < 2031) %>%
+    dplyr::mutate(year = factor(year, levels = sort(unique(gathered_df$year)))) %>%
+    dplyr::mutate(alloc_strategy = factor(alloc_strategy, levels = pltLabels_allocStrategy$alloc_strategy, labels = pltLabels_allocStrategy$plot_alloc_strategy))
+
+  plt <- ggplot(plot_df, aes(x = year, y = median, group = alloc_strategy)) +
+            geom_line(aes(colour = alloc_strategy), size = 1.25) +
+            geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper, fill = alloc_strategy), alpha = 0.3) + 
+            scale_colour_tableau(name = "Allocation\nStrategy") +
+            scale_fill_tableau(name = "Allocation\nStrategy") +
+            theme_bw() + 
+            theme(text = element_text(size = 12), legend.text = element_text(size = 9), legend.position = "bottom", legend.title = element_blank(), axis.text.x = element_text(angle=45, vjust=1, hjust=1), axis.title.x = element_blank()) +
+            scale_y_continuous(paste("Cumulative", pltLabels$plotMeasure), limits = c(0,NA)) +
+            guides(colour=guide_legend(nrow=2))
+
+  return(plt)
+}
+
+```
+
+This section presents cumulative cases averted, deaths averted, and DALYs averted for the baseline parameter models for all vaccination deployment scenarios (`r fig_nums("bl-casesAverted", display = "cite")`, `r fig_nums("bl-deathsAverted", display = "cite")`, `r fig_nums("bl-dalysAverted", display = "cite")`).
+
+```{r, read-bl}
+## read baseline cumulative outputs
+bl_out_wd <- "generated_outputs/baseline"
+cumrunCI_bl <- read_csv(paste0(bl_out_wd, "/master_processed_cum_ci_ssa.csv")) 
+costper_bl <- read_csv(paste0(bl_out_wd, "/master_processed_ci_costper.csv"))
+percCA_bl <- read_csv(paste0(bl_out_wd, "/master_processed_ci_percCA.csv")) 
+
+tab_nums(name = "bl-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted (USD 2017) from 2018-2030 by vaccination deployment strategy for baseline model parameters.**", display = FALSE)
+
+runCI_bl <- read_csv(paste0(bl_out_wd, "/master_processed_ci_ssa.csv")) 
+
+tab_nums(name = "bl-annoutcomes", caption = "**Mean percentage of cases averted annually from 2018-2030 by vaccination deployment strategy for baseline model parameters.**", display = FALSE)
+
+```
+
+```{r, fig-bl-casesAverted, fig.dim = c(6,4)}
+
+plot_cumts(gathered_df = cumrunCI_bl, healthOutcome = "casesAverted", scenarioLs = scenario_ls)
+fig_nums(name = "bl-casesAverted", caption = "**Cumulative cases averted from mass oral cholera vaccination campaigns across all vaccination deployment strategies in sub-Saharan Africa from 2018 through 2030.**", display = FALSE)
+
+```
+
+`r fig_nums("bl-casesAverted", display = "full")`
+
+```{r, fig-bl-deathsAverted, fig.dim = c(6,4)}
+
+plot_cumts(gathered_df = cumrunCI_bl, healthOutcome = "deathsAverted", scenarioLs = scenario_ls)
+fig_nums(name = "bl-deathsAverted", caption = "**Cumulative deaths averted from mass oral cholera vaccination campaigns across all vaccination deployment strategies in sub-Saharan Africa from 2018 through 2030.**", display = FALSE)
+
+```
+
+`r fig_nums("bl-deathsAverted", display = "full")`
+
+```{r, fig-bl-dalysAverted, fig.dim = c(6,4)}
+
+plot_cumts(gathered_df = cumrunCI_bl, healthOutcome = "dalysAverted", scenarioLs = scenario_ls)
+fig_nums(name = "bl-dalysAverted", caption = "**Cumulative DALYs averted from mass oral cholera vaccination campaigns across all vaccination deployment strategies in sub-Saharan Africa from 2018 through 2030.**", display = FALSE)
+
+```
+
+`r fig_nums("bl-dalysAverted", display = "full")`
+
+\newpage
+
+
+## Summary Tables by Parameter Set
+
+This section presents summary tables of model outcomes by sensitivity parameter set.
+
+```{r, fxn-tab-outcomes}
+format_tab_cumoutcomes <- function(cumrunCI, costper, percCA){
+  alloc_labels <- label_allocStrategy() 
+
+  ## cumulative cases, deaths, dalys averted
+  outcome_df <- cumrunCI %>% 
+    dplyr::filter(measure %in% c("casesAverted", "deathsAverted", "dalysAverted")) %>%
+    dplyr::filter(year == 2030) %>%
+    left_join(alloc_labels, by = c("alloc_strategy")) %>%
+    dplyr::mutate(mean = round(mean), median = round(median), ci_lower = round(ci_lower), ci_upper = round(ci_upper)) %>%
+    dplyr::select(plot_alloc_strategy, measure, mean, ci_lower, ci_upper) %>%
+    dplyr::mutate(measure = recode(measure, casesAverted = "cases averted", deathsAverted = "deaths averted", dalysAverted = "DALYs averted")) 
+
+  ## cumulative percentage of cases averted
+  perc_df <- percCA %>%
+    left_join(alloc_labels, by = c("alloc_strategy")) %>%
+    dplyr::mutate(measure = "% cases averted") %>%
+    dplyr::mutate(mean = round(mean), ci_lower = round(ci_lower), ci_upper = round(ci_upper)) %>%
+    dplyr::select(plot_alloc_strategy, measure, mean, ci_lower, ci_upper)
+
+  ## costs per dalys averted
+  costper_df <- costper %>%
+    dplyr::mutate(mean = round(mean_costper), ci_lower = round(q025_costper), ci_upper = round(q975_costper)) %>%
+    dplyr::mutate(measure = "cost per DALY averted") %>%
+    dplyr::select(plot_alloc_strategy, measure, mean, ci_lower, ci_upper)
+
+  tab_df <- bind_rows(outcome_df, perc_df, costper_df) %>%
+    dplyr::mutate(measure = factor(measure, levels = c("cases averted", "deaths averted", "DALYs averted", "% cases averted", "cost per DALY averted"))) %>%
+    dplyr::arrange(measure, plot_alloc_strategy) 
+
+  return(tab_df)
+}
+
+format_tab_annoutcomes <- function(runCI){
+  alloc_labels <- label_allocStrategy() 
+
+  cf_year <- runCI %>% 
+    filter(year <= 2030 & measure == "cases_cf" & alloc_strategy == "allDistrict") %>%
+    dplyr::select(year, mean) %>% rename(cf = mean)
+  tab_df <- runCI %>% 
+    dplyr::filter(year <= 2030 & measure == "casesAverted") %>%
+    full_join(cf_year, by = c("year")) %>%
+    left_join(alloc_labels, by = c("alloc_strategy")) %>%
+    dplyr::mutate(mnperc = round(mean/cf*100), year = as.character(year)) %>%
+    dplyr::select(plot_alloc_strategy, year, mnperc) %>%
+    tidyr::spread(year, mnperc) 
+  
+  return(tab_df)
+}
+
+```
+
+### Baseline 
+
+`r tab_nums("bl-cumoutcomes", display = "full")`
+
+```{r, tab-bl-cumoutcomes}
+
+display_bl_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_bl, costper_bl, percCA_bl)
+knitr::kable(display_bl_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean",  "2.5%", "97.5%"))
+
+```
+
+\newpage
+`r tab_nums("bl-annoutcomes", display = "full")`
+
+```{r, tab-bl-annoutcomes}
+
+display_bl_annoutcomes <- format_tab_annoutcomes(runCI_bl)
+knitr::kable(display_bl_annoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030"))
+
+```
+
+\newpage
+
+### Vaccine Efficacy
+
+```{r, read-ve}
+## read low and high ve cumulative outputs
+alloc_labels <- label_allocStrategy()
+lve_out_wd <- "generated_outputs/low_ve"
+cumrunCI_lve <- read_csv(paste0(lve_out_wd, "/master_processed_cum_ci_ssa.csv"))
+runCI_lve <- read_csv(paste0(lve_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_lve <- read_csv(paste0(lve_out_wd, "/master_processed_ci_costper.csv"))
+percCA_lve <- read_csv(paste0(lve_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "lve-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for low vaccine efficacy model parameters.**", display = FALSE)
+
+hve_out_wd <- "generated_outputs/high_ve"
+cumrunCI_hve <- read_csv(paste0(hve_out_wd, "/master_processed_cum_ci_ssa.csv")) 
+runCI_hve <- read_csv(paste0(hve_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_hve <- read_csv(paste0(hve_out_wd, "/master_processed_ci_costper.csv"))
+percCA_hve <- read_csv(paste0(hve_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "hve-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for high vaccine efficacy model parameters.**", display = FALSE)
+
+```
+
+`r tab_nums("lve-cumoutcomes", display = "full")`
+
+```{r, tab-lve-cumoutcomes}
+
+display_lve_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_lve, costper_lve, percCA_lve)
+knitr::kable(display_lve_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+`r tab_nums("hve-cumoutcomes", display = "full")`
+
+```{r, tab-hve-cumoutcomes}
+
+display_hve_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_hve, costper_hve, percCA_hve)
+knitr::kable(display_hve_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+### Indirect Vaccine Protection
+
+```{r, read-ind}
+## read low and high indirect cumulative outputs
+lind_out_wd <- "generated_outputs/low_indirect"
+cumrunCI_lind <- read_csv(paste0(lind_out_wd, "/master_processed_cum_ci_ssa.csv"))
+runCI_lind <- read_csv(paste0(lind_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_lind <- read_csv(paste0(lind_out_wd, "/master_processed_ci_costper.csv"))
+percCA_lind <- read_csv(paste0(lind_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "lind-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for a model with no indirect effects.**", display = FALSE)
+
+hind_out_wd <- "generated_outputs/high_indirect"
+cumrunCI_hind <- read_csv(paste0(hind_out_wd, "/master_processed_cum_ci_ssa.csv")) 
+runCI_hind <- read_csv(paste0(hind_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_hind <- read_csv(paste0(hind_out_wd, "/master_processed_ci_costper.csv"))
+percCA_hind <- read_csv(paste0(hind_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "hind-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for high indirect effects model parameters.**", display = FALSE)
+
+```
+
+`r tab_nums("lind-cumoutcomes", display = "full")`
+
+```{r, tab-lind-cumoutcomes}
+
+display_lind_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_lind, costper_lind, percCA_lind)
+knitr::kable(display_lind_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+`r tab_nums("hind-cumoutcomes", display = "full")`
+
+```{r, tab-hind-cumoutcomes}
+
+display_hind_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_hind, costper_hind, percCA_hind)
+knitr::kable(display_hind_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+### Campaign Frequency
+
+```{r, read-campFreq}
+## read low and high campaign frequency cumulative outputs
+lcf_out_wd <- "generated_outputs/low_campaignFreq"
+cumrunCI_lcf <- read_csv(paste0(lcf_out_wd, "/master_processed_cum_ci_ssa.csv"))
+runCI_lcf <- read_csv(paste0(lcf_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_lcf <- read_csv(paste0(lcf_out_wd, "/master_processed_ci_costper.csv"))
+percCA_lcf <- read_csv(paste0(lcf_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "lcf-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for the low campaign frequency (every 5 years) parameter set.**", display = FALSE)
+
+hcf_out_wd <- "generated_outputs/high_campaignFreq"
+cumrunCI_hcf <- read_csv(paste0(hcf_out_wd, "/master_processed_cum_ci_ssa.csv")) 
+runCI_hcf <- read_csv(paste0(hcf_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_hcf <- read_csv(paste0(hcf_out_wd, "/master_processed_ci_costper.csv"))
+percCA_hcf <- read_csv(paste0(hcf_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "hcf-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for the high campaign frequency (every 2 years) parameter set.**", display = FALSE)
+
+```
+
+`r tab_nums("lcf-cumoutcomes", display = "full")`
+
+```{r, tab-lcf-cumoutcomes}
+
+display_lcf_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_lcf, costper_lcf, percCA_lcf)
+knitr::kable(display_lcf_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+`r tab_nums("hcf-cumoutcomes", display = "full")`
+
+```{r, tab-hcf-cumoutcomes}
+
+display_hcf_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_hcf, costper_hcf, percCA_hcf)
+knitr::kable(display_hcf_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+### Campaign Coverage
+
+```{r, read-cov}
+## read low and high coverage cumulative outputs
+alloc_labels <- label_allocStrategy()
+lcov_out_wd <- "generated_outputs/low_coverage"
+cumrunCI_lcov <- read_csv(paste0(lcov_out_wd, "/master_processed_cum_ci_ssa.csv"))
+runCI_lcov <- read_csv(paste0(lcov_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_lcov <- read_csv(paste0(lcov_out_wd, "/master_processed_ci_costper.csv"))
+percCA_lcov <- read_csv(paste0(lcov_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "lcov-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for low vaccination coverage model parameters.**", display = FALSE)
+
+hcov_out_wd <- "generated_outputs/high_coverage"
+cumrunCI_hcov <- read_csv(paste0(hcov_out_wd, "/master_processed_cum_ci_ssa.csv")) 
+runCI_hcov <- read_csv(paste0(hcov_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_hcov <- read_csv(paste0(hcov_out_wd, "/master_processed_ci_costper.csv"))
+percCA_hcov <- read_csv(paste0(hcov_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "hcov-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for high vaccination coverage model parameters.**", display = FALSE)
+
+```
+
+`r tab_nums("lcov-cumoutcomes", display = "full")`
+
+```{r, tab-lcov-cumoutcomes}
+
+display_lcov_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_lcov, costper_lcov, percCA_lcov)
+knitr::kable(display_lcov_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+`r tab_nums("hcov-cumoutcomes", display = "full")`
+
+```{r, tab-hcov-cumoutcomes}
+
+display_hcov_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_hcov, costper_hcov, percCA_hcov)
+knitr::kable(display_hcov_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+### Vaccine Supply
+
+```{r, read-vaccSupply}
+## read low and high vaccine supply cumulative outputs
+lvs_out_wd <- "generated_outputs/low_vaccSupply"
+cumrunCI_lvs <- read_csv(paste0(lvs_out_wd, "/master_processed_cum_ci_ssa.csv"))
+runCI_lvs <- read_csv(paste0(lvs_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_lvs <- read_csv(paste0(lvs_out_wd, "/master_processed_ci_costper.csv"))
+percCA_lvs <- read_csv(paste0(lvs_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "lvs-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for the low vaccine supply (up to 26 million doses in 2030) parameter set.**", display = FALSE)
+
+hvs_out_wd <- "generated_outputs/high_vaccSupply"
+cumrunCI_hvs <- read_csv(paste0(hvs_out_wd, "/master_processed_cum_ci_ssa.csv")) 
+runCI_hvs <- read_csv(paste0(hvs_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_hvs <- read_csv(paste0(hvs_out_wd, "/master_processed_ci_costper.csv"))
+percCA_hvs <- read_csv(paste0(hvs_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "hvs-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for the high vaccine supply (up to 95 million doses in 2030) parameter set.**", display = FALSE)
+
+```
+
+`r tab_nums("lvs-cumoutcomes", display = "full")`
+
+```{r, tab-lvs-cumoutcomes}
+
+display_lvs_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_lvs, costper_lvs, percCA_lvs)
+knitr::kable(display_lvs_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+`r tab_nums("hvs-cumoutcomes", display = "full")`
+
+```{r, tab-hvs-cumoutcomes}
+
+display_hvs_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_hvs, costper_hvs, percCA_hvs)
+knitr::kable(display_hvs_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+### Population Turnover
+
+```{r, read-lifeExpect}
+## read low and high life expectancy cumulative outputs
+llf_out_wd <- "generated_outputs/low_lifeExpect"
+cumrunCI_llf <- read_csv(paste0(llf_out_wd, "/master_processed_cum_ci_ssa.csv"))
+runCI_llf <- read_csv(paste0(llf_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_llf <- read_csv(paste0(llf_out_wd, "/master_processed_ci_costper.csv"))
+percCA_llf <- read_csv(paste0(llf_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "llf-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for the high population turnover rate/low life expectancy (56 years) parameter set.**", display = FALSE)
+
+hlf_out_wd <- "generated_outputs/high_vaccSupply"
+cumrunCI_hlf <- read_csv(paste0(hlf_out_wd, "/master_processed_cum_ci_ssa.csv")) 
+runCI_hlf <- read_csv(paste0(hlf_out_wd, "/master_processed_ci_ssa.csv")) 
+costper_hlf <- read_csv(paste0(hlf_out_wd, "/master_processed_ci_costper.csv"))
+percCA_hlf <- read_csv(paste0(hlf_out_wd, "/master_processed_ci_percCA.csv"))
+
+
+tab_nums(name = "hlf-cumoutcomes", caption = "**Summary of cumulative health impacts and total cost per DALY averted from 2018-2030 by vaccination deployment strategy for the low population turnover rate/high life expectancy (70 years) parameter set.**", display = FALSE)
+
+```
+
+`r tab_nums("llf-cumoutcomes", display = "full")`
+
+```{r, tab-llf-cumoutcomes}
+
+display_llf_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_llf, costper_llf, percCA_llf)
+knitr::kable(display_llf_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
+
+\newpage
+
+`r tab_nums("hlf-cumoutcomes", display = "full")`
+
+```{r, tab-hlf-cumoutcomes}
+
+display_hlf_cumoutcomes <- format_tab_cumoutcomes(cumrunCI_hlf, costper_hlf, percCA_hlf)
+knitr::kable(display_hlf_cumoutcomes, format = "pandoc", booktabs = T, align = "c", row.names = FALSE, col.names = c("Deployment Strategy", "Measure", "Mean", "2.5%", "97.5%"))
+
+```
