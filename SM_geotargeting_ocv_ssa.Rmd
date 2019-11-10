@@ -17,8 +17,8 @@ library(kableExtra)
 
 ```{r captioner, include=FALSE, eval=TRUE}
 library(captioner)
-tab_nums <- captioner(prefix = "Table S", auto_space = FALSE)
-fig_nums <- captioner(prefix = "Figure S", auto_space = FALSE)
+tab_nums <- captioner(prefix = "Table", type = "C", auto_space = TRUE)
+fig_nums <- captioner(prefix = "Figure", type = "C", auto_space = TRUE)
 source("source/utils_mods.R")
 reload_source()
 
@@ -325,23 +325,23 @@ The case optimized, case-logistics optimized, and watsan optimized results were 
 
 The watsan optimized strategy was similar to the water optimized and sanitation optimized strategies, but the districts were prioritized according to those with the lowest access to improved water or sanitation. As a combination of the water and sanitation optimized strategies, the watsan optimized strategy performed better than the sanitation optimized strategy and less well than the water optimized strategy; 8.2\% (95\% CI: 7.7-8.4\%) of cases that would have otherwise occurred without vaccination from 2018 through 2030 were averted, which translates to 199,000 cases, 7,000 deaths, and 171,000 DALYs averted after 13 years of vaccination campaigns.
 
-The rate optimized and rate-logistics optimized vaccination campaign deployment strategies are described in greater detail in `r fig_nums("hr-district-rate-flowchart", display = "cite")` and `r fig_nums("optimal-district-rate-flowchart", display = "cite")`. 
+The rate optimized and rate-logistics optimized vaccination campaign deployment strategies are described in greater detail in `r fig_nums("optimal-district-rate-flowchart", display = "cite")` and `r fig_nums("hr-district-rate-flowchart", display = "cite")`. 
 
 ```{r, fig-hrdiflow}
-knitr::include_graphics("figures/hr_district_rate_flowchart.png")
-fig_nums(name = "hr-district-rate-flowchart", caption = "**Flowchart depicting the rate optimized vaccination deployment strategy with primary scenario parameters.**", display = FALSE)
-
-```
-
-`r fig_nums("hr-district-rate-flowchart", display = "full")`
-
-```{r, fig-optdiflow}
 knitr::include_graphics("figures/optimal_district_rate_flowchart.png")
-fig_nums(name = "optimal-district-rate-flowchart", caption = "**Flowchart depicting the rate-logistics optimized vaccination deployment strategy with primary scenario parameters.**", display = FALSE)
+fig_nums(name = "optimal-district-rate-flowchart", caption = "**Flowchart depicting the rate optimized vaccination deployment strategy with primary scenario parameters.**", display = FALSE)
 
 ```
 
 `r fig_nums("optimal-district-rate-flowchart", display = "full")`
+
+```{r, fig-optdiflow}
+knitr::include_graphics("figures/hr_district_rate_flowchart.png")
+fig_nums(name = "hr-district-rate-flowchart", caption = "**Flowchart depicting the rate-logistics optimized vaccination deployment strategy with primary scenario parameters.**", display = FALSE)
+
+```
+
+`r fig_nums("hr-district-rate-flowchart", display = "full")`
 
 ## Measuring Public Health Impact and Cost Benefit
 

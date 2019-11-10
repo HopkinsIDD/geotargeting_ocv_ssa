@@ -3255,7 +3255,7 @@ process_CI_ssa <- function(processed_samples_df, scenarioLs){
   ## process raw samples
   ssa_samples_med <- ssa_samples %>% 
     group_by(scenario, measure, year) %>% 
-    dplyr::summarise(median = median(value)) %>% 
+    dplyr::summarise(median = median(value), mean = mean(value)) %>% 
     ungroup
   ssa_samples_lower <- ssa_samples %>% 
     group_by(scenario, measure, year) %>% 
