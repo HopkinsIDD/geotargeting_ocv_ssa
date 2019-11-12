@@ -1,5 +1,5 @@
 ---
-title: "The impact of geographic targeting of oral cholera vaccination in sub-Saharan Africa: a modeling study"
+title: "The projected impact of geographic targeting of oral cholera vaccination in sub-Saharan Africa: a modeling study"
 subtitle: "Supplementary Material"
 author: "Elizabeth C. Lee, Andrew S. Azman, Joshua Kaminsky, Sean M. Moore, Heather S. McKay, Justin Lessler"
 output: 
